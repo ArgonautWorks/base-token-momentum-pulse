@@ -20,7 +20,16 @@ const inputSchema = { type: "object", properties: { limit: { type: "integer", mi
 const outputExample = { limit: 5, window: { start_block: 40_000_000, end_block: 40_000_299 }, tokens: [{ rank: 1, token: { address: "0xexample", symbol: "TOKEN" }, usdc_volume_atomic: "1234567", usdc_volume: "1.234567" }] };
 const discovery = declareDiscoveryExtension({ input: { limit: 5 }, inputSchema, output: { example: outputExample } });
 const postDiscovery = declareDiscoveryExtension({ input: { limit: 5 }, inputSchema, bodyType: "json", output: { example: outputExample } });
-const paidResource = { accepts: [{ scheme: "exact", price: PRICE, network: NETWORK, payTo: PAY_TO }], description: SERVICE_DESCRIPTION, mimeType: "application/json", serviceName: "ArgonautWorks Base Token Momentum Pulse", tags: ["base", "usdc", "onchain", "swaps", "momentum", "x402"], extensions: discovery };
+function paidResource(extensions) {
+  return {
+    accepts: [{ scheme: "exact", price: PRICE, network: NETWORK, payTo: PAY_TO }],
+    description: SERVICE_DESCRIPTION,
+    mimeType: "application/json",
+    serviceName: "ArgonautWorks Base Token Momentum Pulse",
+    tags: ["base", "usdc", "onchain", "swaps", "momentum", "x402"],
+    extensions,
+  };
+}
 
 export function createRetriableInitializer(initialize, { maxAttempts = 3, retryDelayMs = 100 } = {}) {
   let initialized = false;
@@ -57,8 +66,8 @@ export function createApp({ loadMomentum = defaultLoadMomentum, initializeFacili
     return next();
   });
   app.use(paymentMiddleware({
-    "GET /api/v1/momentum": paidResource,
-    "POST /api/v1/momentum": { ...paidResource, extensions: postDiscovery },
+    "GET /api/v1/momentum": paidResource(discovery),
+    "POST /api/v1/momentum": paidResource(postDiscovery),
   }, resourceServer, undefined, undefined, false));
 
   app.get("/", (_request, response) => response.json({ service: "ArgonautWorks Base Token Momentum Pulse", purpose: SERVICE_DESCRIPTION, endpoint: "GET with optional limit query parameter or POST JSON to /api/v1/momentum", price: PRICE, settlement: { protocol: "x402", network: NETWORK, asset: "USDC" }, health: "/health", openapi: "/openapi.json", agent_card: "/.well-known/agent-card.json", a2a: "/a2a", x402_manifest: "/.well-known/x402", source: PUBLIC_SOURCE }));

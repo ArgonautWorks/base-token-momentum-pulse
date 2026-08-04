@@ -29,6 +29,15 @@ test("publishes free discovery surfaces and exact 4000-atomic paid challenge", a
     const challenge = JSON.parse(Buffer.from(response.headers.get("payment-required"), "base64").toString("utf8"));
     assert.equal(challenge.x402Version, 2);
     assert.equal(challenge.accepts[0].amount, "4000");
+    assert.equal(challenge.extensions.bazaar.info.input.method, "GET");
+    assert.deepEqual(challenge.extensions.bazaar.info.input.queryParams, { limit: 5 });
+    const postResponse = await fetch(`${origin}/api/v1/momentum`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ limit: 4 }) });
+    assert.equal(postResponse.status, 402);
+    const postChallenge = JSON.parse(Buffer.from(postResponse.headers.get("payment-required"), "base64").toString("utf8"));
+    assert.equal(postChallenge.accepts[0].amount, "4000");
+    assert.equal(postChallenge.extensions.bazaar.info.input.method, "POST");
+    assert.equal(postChallenge.extensions.bazaar.info.input.bodyType, "json");
+    assert.deepEqual(postChallenge.extensions.bazaar.info.input.body, { limit: 5 });
   });
 });
 

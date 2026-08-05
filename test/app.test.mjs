@@ -12,22 +12,34 @@ async function withServer(app, run) {
   try { await run(`http://127.0.0.1:${server.address().port}`); } finally { server.close(); await once(server, "close"); }
 }
 
-test("publishes distinct discovery surfaces and exact paid challenges", async () => {
+test("publishes buyer-intent discovery, free samples, and exact paid challenges", async () => {
   await withServer(createApp({ loadMomentum: async () => SAMPLE, loadResolver: async () => RESOLUTION }), async (origin) => {
-    const [root, health, openapi, manifest, card, alias, llms] = await Promise.all([
-      fetch(origin).then((response) => response.json()), fetch(`${origin}/health`).then((response) => response.json()), fetch(`${origin}/openapi.json`).then((response) => response.json()), fetch(`${origin}/.well-known/x402`).then((response) => response.json()), fetch(`${origin}/.well-known/agent-card.json`).then((response) => response.json()), fetch(`${origin}/.well-known/agent.json`).then((response) => response.json()), fetch(`${origin}/llms.txt`).then((response) => response.text()),
+    const [root, health, openapi, manifest, card, alias, sample, llms, favicon] = await Promise.all([
+      fetch(origin).then((response) => response.json()), fetch(`${origin}/health`).then((response) => response.json()), fetch(`${origin}/openapi.json`).then((response) => response.json()), fetch(`${origin}/.well-known/x402`).then((response) => response.json()), fetch(`${origin}/.well-known/agent-card.json`).then((response) => response.json()), fetch(`${origin}/.well-known/agent.json`).then((response) => response.json()), fetch(`${origin}/sample`).then((response) => response.json()), fetch(`${origin}/llms.txt`).then((response) => response.text()), fetch(`${origin}/favicon.ico`),
     ]);
     assert.equal(root.endpoints.momentum.price, "$0.004");
     assert.equal(root.endpoints.resolve.price, "$0.002");
+    assert.equal(root.free_sample, "/sample");
+    assert.match(root.agentcash.trending_base_tokens, /--max-amount 0\.004/);
     assert.equal(health.window_blocks, 300);
+    assert.equal(health.version, "0.3.0");
     assert.equal(openapi.paths["/api/v1/momentum"].get.operationId, "getBaseTokenMomentum");
     assert.equal(openapi.paths["/api/v1/momentum"].post.operationId, "getBaseTokenMomentumFromJson");
     assert.equal(openapi.paths["/api/v1/resolve"].get.operationId, "resolveValidatedBaseToken");
     assert.equal(openapi.paths["/api/v1/resolve"].post.operationId, "resolveValidatedBaseTokenFromJson");
     assert.equal(manifest.resources.length, 4);
     assert.equal(card.url, `${origin}/a2a`);
+    assert.equal(card.skills[0].name, "Find trending Base tokens");
     assert.deepEqual(alias, card);
+    assert.equal(sample.sample, true);
+    assert.equal(sample.live, false);
+    assert.equal(sample.examples.trending_base_tokens.tokens[0].rank, 1);
+    assert.match(sample.agentcash.token_lookup, /query=cbBTC/);
+    assert.equal(openapi.paths["/sample"].get.security.length, 0);
+    assert.deepEqual(openapi.paths["/a2a"].post.security, []);
+    assert.match(llms, /Copy-ready AgentCash trending Base tokens call/);
     assert.match(llms, /raw activity can include bots or wash trading/);
+    assert.equal(favicon.status, 200);
     const response = await fetch(`${origin}/api/v1/momentum`);
     assert.equal(response.status, 402);
     const challenge = JSON.parse(Buffer.from(response.headers.get("payment-required"), "base64").toString("utf8"));

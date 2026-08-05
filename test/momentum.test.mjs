@@ -115,3 +115,32 @@ test("serves bounded stale cache after a refresh failure", async () => {
   clock += 100;
   await assert.rejects(() => loader(), /offline/);
 });
+
+test("caches the full supported inventory when a small request arrives first", async () => {
+  let clock = 1_000;
+  const requestedLimits = [];
+  const allTokens = Array.from({ length: 10 }, (_, index) => ({
+    rank: index + 1,
+    token: { address: `0x${String(index + 1).padStart(40, "0")}` },
+  }));
+  const loader = createMomentumLoader({
+    rpcUrls: ["https://rpc.test"],
+    now: () => clock,
+    loadFromRpcImpl: async (_endpoint, input) => {
+      requestedLimits.push(input.limit);
+      return { ...SAMPLE_SNAPSHOT, limit: input.limit, observed_at: new Date(clock).toISOString(), tokens: allTokens.slice(0, input.limit) };
+    },
+  });
+
+  const firstSmall = await loader({ limit: 1 });
+  const thenLarge = await loader({ limit: 10 });
+  assert.equal(firstSmall.tokens.length, 1);
+  assert.equal(thenLarge.tokens.length, 10);
+  assert.deepEqual(requestedLimits, [10]);
+
+  clock += 61_000;
+  const [concurrentSmall, concurrentLarge] = await Promise.all([loader({ limit: 1 }), loader({ limit: 10 })]);
+  assert.equal(concurrentSmall.tokens.length, 1);
+  assert.equal(concurrentLarge.tokens.length, 10);
+  assert.deepEqual(requestedLimits, [10, 10]);
+});

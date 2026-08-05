@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
-    "check": "node --check app.mjs && node --check lib/*.mjs && node --check api/*.mjs"
+    "check": "node --check app.mjs && node --check lib/*.mjs && node --check api/*.mjs && node --check scripts/*.mjs",
+    "monitor:revenue": "node scripts/monitor-revenue.mjs",
+    "payanagent:register": "node scripts/register-payanagent.mjs"
   },
   "engines": {
     "node": ">=20"

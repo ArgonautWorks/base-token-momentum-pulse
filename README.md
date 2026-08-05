@@ -59,3 +59,9 @@ npm start
 ```
 
 MIT licensed.
+
+## PayanAgent relay and realized-revenue monitor
+
+`npm run payanagent:register` is a deliberately manual deployment step and is not run automatically. When invoked after production deployment, it reads the existing owner-only PayanAgent state file at runtime, registers or updates only the `GET https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/momentum` relay offer, then verifies the exact 4,000-atomic-unit Base-USDC challenge, receiving wallet, network, and relay endpoint before persisting the non-secret offer identifier. It never prints the API key.
+
+`npm run monitor:revenue` is also opt-in. It records a receipt only when it finds a confirmed external 4,000-atomic-unit Base-USDC `transferWithAuthorization` payment to the fixed receiving wallet. If a configured PayanAgent relay exists, the same amount is labeled `payanagent` only after an exact confirmed, delivered receipt for that offer and endpoint verifies the transaction hash; otherwise it is labeled `direct`. Other transfers, self-payments, wrong amounts, ordinary ERC-20 transfers, receipt mismatches, and duplicates are excluded. The default local ledger is `revenue-ledger.csv`; it does not write to the main venture-lab repository.

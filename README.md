@@ -4,6 +4,14 @@ An accountless x402 v2 API that derives a transparent Base-mainnet USDC-pool act
 
 `GET` or JSON `POST /api/v1/momentum` costs exactly **$0.004 USDC on Base**. `GET` or JSON `POST /api/v1/resolve` costs exactly **$0.002 USDC on Base**. Both settle directly to `0x5e2023b1D1366d6366E768fe432AD627bfAa5d57` through the PayAI x402 v2 facilitator.
 
+Free representative outputs and copy-ready purchase commands: <https://argonaut-base-token-momentum-pulse.vercel.app/sample>
+
+```sh
+npx -y agentcash fetch 'https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/momentum?limit=5' --payment-network base --max-amount 0.004 --yes --format json
+
+npx -y agentcash fetch 'https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/resolve?query=cbBTC&limit=5' --payment-network base --max-amount 0.002 --yes --format json
+```
+
 ## Input
 
 `limit` is an integer from `1` to `10`, defaulting to `5`.

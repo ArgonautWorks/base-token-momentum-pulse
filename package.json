@@ -1,6 +1,6 @@
 {
   "name": "argonaut-base-token-momentum-pulse",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,6 +19,6 @@
     "@x402/express": "2.21.0",
     "@x402/extensions": "2.21.0",
     "express": "5.2.1",
-    "viem": "2.38.0"
+    "viem": "2.55.11"
   }
 }

@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   BASE_USDC,
   MOMENTUM_ENDPOINT,
-  RESOLVER_ENDPOINT,
+  RESOLVER_RELAY_ENDPOINT,
   TRANSFER_TOPIC,
   classifyMomentumTransfer,
   classifyResolverTransfer,
@@ -51,7 +51,7 @@ function relayConfig() {
   if (!sellerId) return null;
   return {
     momentum: payan?.offers?.baseTokenMomentum?.offerId ? { offerId: payan.offers.baseTokenMomentum.offerId, sellerId, endpoint: MOMENTUM_ENDPOINT, amountAtomic: MOMENTUM_PRICE_ATOMIC } : null,
-    resolver: payan?.offers?.baseTokenResolver?.offerId ? { offerId: payan.offers.baseTokenResolver.offerId, sellerId, endpoint: RESOLVER_ENDPOINT, amountAtomic: RESOLVER_PRICE_ATOMIC } : null,
+    resolver: payan?.offers?.baseTokenResolver?.offerId ? { offerId: payan.offers.baseTokenResolver.offerId, sellerId, endpoint: RESOLVER_RELAY_ENDPOINT, amountAtomic: RESOLVER_PRICE_ATOMIC } : null,
   };
 }
 

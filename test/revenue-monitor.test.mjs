@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   MOMENTUM_PRICE_ATOMIC,
   RESOLVER_PRICE_ATOMIC,
+  RESOLVER_RELAY_ENDPOINT,
   classifyMomentumTransfer,
   classifyResolverTransfer,
   qualifyingPayanRelayReceipt,
@@ -48,9 +49,9 @@ test("requires an exact confirmed delivered Payan relay receipt before labeling 
   assert.equal(qualifyingPayanRelayReceipt({ ...relayReceipt, offerId: "other" }, { offerId: OFFER, sellerId: AGENT }), false);
   assert.equal(qualifyingPayanRelayReceipt({ ...relayReceipt, delivered: false }, { offerId: OFFER, sellerId: AGENT }), false);
   assert.equal(classifyMomentumTransfer(paidLog(), paidTransaction, WALLET, { verifiedPayanTransactions: new Set([TX]) }).channel, "payanagent");
-  const resolverRelay = { ...relayReceipt, offerId: "offer-resolver", amountMicroUsd: 2_000, externalUrl: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/resolve" };
-  assert.equal(qualifyingPayanRelayReceipt(resolverRelay, { offerId: "offer-resolver", sellerId: AGENT, endpoint: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/resolve", amountAtomic: RESOLVER_PRICE_ATOMIC }), true);
-  assert.equal(qualifyingPayanRelayReceipt({ ...resolverRelay, externalUrl: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/momentum" }, { offerId: "offer-resolver", sellerId: AGENT, endpoint: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/resolve", amountAtomic: RESOLVER_PRICE_ATOMIC }), false);
+  const resolverRelay = { ...relayReceipt, offerId: "offer-resolver", amountMicroUsd: 2_000, externalUrl: RESOLVER_RELAY_ENDPOINT };
+  assert.equal(qualifyingPayanRelayReceipt(resolverRelay, { offerId: "offer-resolver", sellerId: AGENT, endpoint: RESOLVER_RELAY_ENDPOINT, amountAtomic: RESOLVER_PRICE_ATOMIC }), true);
+  assert.equal(qualifyingPayanRelayReceipt({ ...resolverRelay, externalUrl: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/resolve" }, { offerId: "offer-resolver", sellerId: AGENT, endpoint: RESOLVER_RELAY_ENDPOINT, amountAtomic: RESOLVER_PRICE_ATOMIC }), false);
   assert.equal(classifyResolverTransfer(paidLog(RESOLVER_PRICE_ATOMIC), paidTransaction, WALLET, { verifiedPayanTransactions: new Set([TX]) }).channel, "payanagent");
 });
 

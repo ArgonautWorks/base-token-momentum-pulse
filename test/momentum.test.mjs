@@ -11,8 +11,11 @@ import {
   decodeV2Swap,
   factoryOwnershipMatches,
   isApprovedPoolIdentity,
+  MAX_INVENTORY,
   normalizePoolFee,
   parseMomentumInput,
+  parseResolverInput,
+  resolveSnapshot,
   topicMatchesFactory,
 } from "../lib/momentum.mjs";
 
@@ -41,6 +44,16 @@ test("validates only a bounded optional limit", () => {
   assert.deepEqual(parseMomentumInput({ limit: "10" }), { limit: 10 });
   assert.throws(() => parseMomentumInput({ limit: 11 }), /limit/);
   assert.throws(() => parseMomentumInput({ chain: "base" }), /unsupported/);
+});
+
+test("validates a tightly bounded resolver query and rejects undeclared fields", () => {
+  assert.deepEqual(parseResolverInput({ query: "  Token  " }), { query: "Token", limit: 5 });
+  assert.deepEqual(parseResolverInput({ query: "0xabc", limit: "1" }), { query: "0xabc", limit: 1 });
+  assert.throws(() => parseResolverInput({}), /query/);
+  assert.throws(() => parseResolverInput({ query: "" }), /query/);
+  assert.throws(() => parseResolverInput({ query: "x".repeat(81) }), /query/);
+  assert.throws(() => parseResolverInput({ query: "x", limit: 6 }), /limit/);
+  assert.throws(() => parseResolverInput({ query: "x", chain: "base" }), /unsupported/);
 });
 
 test("decodes signed V3 amounts and V2 USDC max-in-or-out exactly", () => {
@@ -136,11 +149,42 @@ test("caches the full supported inventory when a small request arrives first", a
   const thenLarge = await loader({ limit: 10 });
   assert.equal(firstSmall.tokens.length, 1);
   assert.equal(thenLarge.tokens.length, 10);
-  assert.deepEqual(requestedLimits, [10]);
+  assert.deepEqual(requestedLimits, [MAX_INVENTORY]);
 
   clock += 61_000;
   const [concurrentSmall, concurrentLarge] = await Promise.all([loader({ limit: 1 }), loader({ limit: 10 })]);
   assert.equal(concurrentSmall.tokens.length, 1);
   assert.equal(concurrentLarge.tokens.length, 10);
-  assert.deepEqual(requestedLimits, [10, 10]);
+  assert.deepEqual(requestedLimits, [MAX_INVENTORY, MAX_INVENTORY]);
+});
+
+test("resolver orders exact address, metadata, prefix, and substring matches with deterministic activity ties", async () => {
+  const tokens = [
+    { rank: 1, token: { address: "0x0000000000000000000000000000000000000001", symbol: "same", name: "Alpha" }, usdc_volume_atomic: "10", unique_transaction_count: 2 },
+    { rank: 2, token: { address: "0x0000000000000000000000000000000000000002", symbol: "same", name: "Alphabet" }, usdc_volume_atomic: "10", unique_transaction_count: 2 },
+    { rank: 3, token: { address: "0x0000000000000000000000000000000000000003", symbol: "ALPINE", name: "Other" }, usdc_volume_atomic: "99", unique_transaction_count: 1 },
+    { rank: 4, token: { address: "0x00000000000000000000000000000000000000ab", symbol: "ZZ", name: "contains alpha" }, usdc_volume_atomic: "999", unique_transaction_count: 9 },
+  ];
+  const snapshot = { ...SAMPLE_SNAPSHOT, observed_at: new Date(1_000).toISOString(), tokens, fresh_ttl_ms: 60_000, stale_ttl_ms: 300_000 };
+  const same = resolveSnapshot(snapshot, parseResolverInput({ query: "same" }), 1_000, false);
+  assert.deepEqual(same.candidates.map((item) => item.token.address), [tokens[0].token.address, tokens[1].token.address]);
+  assert.deepEqual(same.candidates.map((item) => item.match_method), ["exact_symbol_or_name", "exact_symbol_or_name"]);
+  const prefix = resolveSnapshot(snapshot, parseResolverInput({ query: "alp", limit: 5 }), 1_000, false);
+  assert.deepEqual(prefix.candidates.map((item) => item.match_method), ["prefix", "prefix", "prefix", "substring"]);
+  const address = resolveSnapshot(snapshot, parseResolverInput({ query: tokens[3].token.address.toUpperCase() }), 1_000, false);
+  assert.equal(address.candidates[0].match_method, "exact_address");
+  assert.equal(address.candidates.length, 1);
+});
+
+test("resolver and momentum share one full-inventory refresh", async () => {
+  let calls = 0;
+  const tokens = Array.from({ length: 12 }, (_, index) => ({ rank: index + 1, token: { address: `0x${String(index + 1).padStart(40, "0")}`, symbol: `T${index + 1}`, name: `Token ${index + 1}` }, usdc_volume_atomic: String(12 - index), unique_transaction_count: 1 }));
+  const loader = createMomentumLoader({
+    rpcUrls: ["https://rpc.test"],
+    loadFromRpcImpl: async (_endpoint, input) => { calls += 1; return { ...SAMPLE_SNAPSHOT, limit: input.limit, observed_at: new Date().toISOString(), tokens: tokens.slice(0, input.limit) }; },
+  });
+  const [momentum, resolved] = await Promise.all([loader({ limit: 10 }), loader.resolve({ query: "token" })]);
+  assert.equal(calls, 1);
+  assert.equal(momentum.tokens.length, 10);
+  assert.equal(resolved.candidates.length, 5);
 });

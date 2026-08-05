@@ -2,7 +2,7 @@
 
 An accountless x402 v2 API that derives a transparent Base-mainnet USDC-pool activity snapshot from direct JSON-RPC calls. It has no market-data aggregator, API key, account, or paid data dependency.
 
-`GET` or JSON `POST /api/v1/momentum` costs exactly **$0.004 USDC on Base** and settles directly to `0x5e2023b1D1366d6366E768fe432AD627bfAa5d57` through the PayAI x402 v2 facilitator.
+`GET` or JSON `POST /api/v1/momentum` costs exactly **$0.004 USDC on Base**. `GET` or JSON `POST /api/v1/resolve` costs exactly **$0.002 USDC on Base**. Both settle directly to `0x5e2023b1D1366d6366E768fe432AD627bfAa5d57` through the PayAI x402 v2 facilitator.
 
 ## Input
 
@@ -13,6 +13,14 @@ curl -i 'http://localhost:3000/api/v1/momentum?limit=5'
 ```
 
 Input validation and the complete direct-RPC scan happen before an x402 challenge. Invalid input, RPC failure, failed Multicall validation, or no validated inventory returns an uncharged error.
+
+## Bounded token resolver
+
+`/api/v1/resolve` requires one `query` string of 1–80 characters and accepts an optional `limit` integer from `1` to `5` (default `5`). It is deliberately not a complete or general token resolver: it searches only the full in-process validated ranking inventory from the same sealed 300-block window. Lowercased matching is deterministic: exact address, exact symbol/name, prefix, then substring; ties use exact USDC-side volume, unique transaction count, then address. Empty matches are valid paid responses.
+
+```sh
+curl -i 'http://localhost:3000/api/v1/resolve?query=token&limit=5'
+```
 
 ## Methodology
 
@@ -30,7 +38,7 @@ Every observed pool is validated in bounded Multicall3 chunks through direct Bas
 
 Topic/factory-family mismatches are rejected. USDC-side volume is decoded exactly as 6-decimal integer atoms: signed `amount0`/`amount1` for V3 and Slipstream, and `max(in, out)` for the USDC side of V2-style swaps. The service uses `BigInt` for all atomic sums, then ranks non-USDC tokens by descending USDC volume, unique transaction count, and address. Token name, symbol, and decimals are queried onchain in batched Multicall3 calls. Evidence links are direct Base Blockscout token and pool pages.
 
-The official primary RPC is `https://mainnet.base.org`; `https://base.drpc.org` is the accountless compatible fallback. The selected endpoint and source state are returned. Refreshes are fresh for about 60 seconds and can explicitly serve a last valid snapshot as stale for up to five minutes. Same-key requests coalesce.
+The official primary RPC is `https://mainnet.base.org`; `https://base.drpc.org` is the accountless compatible fallback. The selected endpoint and source state are returned. Refreshes are fresh for about 60 seconds and can explicitly serve a last valid snapshot as stale for up to five minutes. Momentum and resolver requests share one singleflight refresh and one bounded inventory (up to 250 validated tokens), so resolver traffic does not duplicate scanning in-process.
 
 ## Limitations
 
@@ -64,4 +72,4 @@ MIT licensed.
 
 `npm run payanagent:register` is a deliberately manual deployment step and is not run automatically. When invoked after production deployment, it reads the existing owner-only PayanAgent state file at runtime, registers or updates only the `GET https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/momentum` relay offer, then verifies the exact 4,000-atomic-unit Base-USDC challenge, receiving wallet, network, and relay endpoint before persisting the non-secret offer identifier. It never prints the API key.
 
-`npm run monitor:revenue` is also opt-in. It records a receipt only when it finds a confirmed external 4,000-atomic-unit Base-USDC `transferWithAuthorization` payment to the fixed receiving wallet. If a configured PayanAgent relay exists, the same amount is labeled `payanagent` only after an exact confirmed, delivered receipt for that offer and endpoint verifies the transaction hash; otherwise it is labeled `direct`. Other transfers, self-payments, wrong amounts, ordinary ERC-20 transfers, receipt mismatches, and duplicates are excluded. The default local ledger is `revenue-ledger.csv`; it does not write to the main venture-lab repository.
+`npm run monitor:revenue` is also opt-in. It records a receipt only when it finds a confirmed external Base-USDC `transferWithAuthorization` payment to the fixed receiving wallet: 4,000 atoms for momentum (E055) or 2,000 atoms for resolver (E056). If a configured PayanAgent relay exists, either amount is labeled `payanagent` only after an exact confirmed, delivered independent-buyer receipt for that product's exact offer, endpoint, amount, and transaction hash; otherwise it is labeled `direct`. Other transfers, self-payments, wrong amounts, ordinary ERC-20 transfers, receipt mismatches, and duplicates are excluded. The default local ledger is `revenue-ledger.csv`; it does not write to the main venture-lab repository.

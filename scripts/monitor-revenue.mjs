@@ -3,9 +3,13 @@ import path from "node:path";
 import {
   BASE_USDC,
   MOMENTUM_ENDPOINT,
+  RESOLVER_ENDPOINT,
   TRANSFER_TOPIC,
   classifyMomentumTransfer,
+  classifyResolverTransfer,
   qualifyingPayanRelayReceipt,
+  MOMENTUM_PRICE_ATOMIC,
+  RESOLVER_PRICE_ATOMIC,
   revenueLedgerRow,
 } from "../lib/revenue-monitor.mjs";
 
@@ -43,18 +47,25 @@ function hexBlock(value) {
 
 function relayConfig() {
   const payan = readJson(PAYAN_STATE_FILE);
-  const offerId = payan?.offers?.baseTokenMomentum?.offerId;
   const sellerId = payan?.agentId ?? payan?.agent?.id ?? process.env.PAYAN_AGENT_ID;
-  return offerId && sellerId ? { offerId, sellerId } : null;
+  if (!sellerId) return null;
+  return {
+    momentum: payan?.offers?.baseTokenMomentum?.offerId ? { offerId: payan.offers.baseTokenMomentum.offerId, sellerId, endpoint: MOMENTUM_ENDPOINT, amountAtomic: MOMENTUM_PRICE_ATOMIC } : null,
+    resolver: payan?.offers?.baseTokenResolver?.offerId ? { offerId: payan.offers.baseTokenResolver.offerId, sellerId, endpoint: RESOLVER_ENDPOINT, amountAtomic: RESOLVER_PRICE_ATOMIC } : null,
+  };
 }
 
 async function verifiedPayanRelayTransactions(config) {
-  if (!config) return new Set();
-  const response = await fetch(`https://payanagent.com/api/v1/agents/${encodeURIComponent(config.sellerId)}/receipts?side=seller&limit=100`, { headers: { Accept: "application/json", "user-agent": "ArgonautWorks/base-token-momentum-pulse-revenue" }, signal: AbortSignal.timeout(30_000) });
+  if (!config?.momentum && !config?.resolver) return { momentum: new Set(), resolver: new Set() };
+  const sellerId = config.momentum?.sellerId ?? config.resolver?.sellerId;
+  const response = await fetch(`https://payanagent.com/api/v1/agents/${encodeURIComponent(sellerId)}/receipts?side=seller&limit=100`, { headers: { Accept: "application/json", "user-agent": "ArgonautWorks/base-token-momentum-pulse-revenue" }, signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`PayanAgent returned HTTP ${response.status}`);
   const body = await response.json();
   if (!Array.isArray(body.receipts)) throw new Error("PayanAgent returned an invalid receipt feed");
-  return new Set(body.receipts.filter((receipt) => qualifyingPayanRelayReceipt(receipt, { ...config, endpoint: MOMENTUM_ENDPOINT })).map((receipt) => receipt.txHash.toLowerCase()));
+  return {
+    momentum: new Set(config.momentum ? body.receipts.filter((receipt) => qualifyingPayanRelayReceipt(receipt, config.momentum)).map((receipt) => receipt.txHash.toLowerCase()) : []),
+    resolver: new Set(config.resolver ? body.receipts.filter((receipt) => qualifyingPayanRelayReceipt(receipt, config.resolver)).map((receipt) => receipt.txHash.toLowerCase()) : []),
+  };
 }
 
 async function main() {
@@ -74,14 +85,15 @@ async function main() {
   for (const log of logs) {
     if (priorTransactions.has(log.transactionHash) || existingLedger.includes(log.transactionHash)) continue;
     const transaction = await rpc("eth_getTransactionByHash", [log.transactionHash]);
-    const receipt = classifyMomentumTransfer(log, transaction, RECEIVING_WALLET, { verifiedPayanTransactions });
+    const receipt = classifyMomentumTransfer(log, transaction, RECEIVING_WALLET, { verifiedPayanTransactions: verifiedPayanTransactions.momentum })
+      ?? classifyResolverTransfer(log, transaction, RECEIVING_WALLET, { verifiedPayanTransactions: verifiedPayanTransactions.resolver });
     if (!receipt) continue;
     fs.appendFileSync(LEDGER_FILE, `${revenueLedgerRow(receipt)}\n`, "utf8");
     receipts.push({ ...receipt, recorded_at: new Date().toISOString() });
   }
   const allReceipts = [...(prior.receipts ?? []), ...receipts];
   writeState({ schema_version: 1, updated_at: new Date().toISOString(), last_scanned_block: confirmedBlock, confirmations: CONFIRMATIONS, receipts: allReceipts, realized_revenue_usd: allReceipts.reduce((total, receipt) => total + Number(receipt.revenue_usd ?? 0), 0) });
-  console.log(`Scanned ${logs.length} incoming USDC transfer(s) with ${verifiedPayanTransactions.size} verified PayanAgent relay receipt(s); recorded ${receipts.length} paid API call(s)`);
+  console.log(`Scanned ${logs.length} incoming USDC transfer(s) with ${verifiedPayanTransactions.momentum.size + verifiedPayanTransactions.resolver.size} verified PayanAgent relay receipt(s); recorded ${receipts.length} paid API call(s)`);
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });

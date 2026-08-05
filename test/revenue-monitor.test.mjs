@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MOMENTUM_PRICE_ATOMIC,
+  RESOLVER_PRICE_ATOMIC,
   classifyMomentumTransfer,
+  classifyResolverTransfer,
   qualifyingPayanRelayReceipt,
   revenueLedgerRow,
 } from "../lib/revenue-monitor.mjs";
@@ -27,10 +29,17 @@ const paidTransaction = { to: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", inpu
 
 test("counts only an exact successful four-millitoken direct payment to the receiving wallet", () => {
   const receipt = classifyMomentumTransfer(paidLog(), paidTransaction, WALLET);
-  assert.deepEqual(receipt, { channel: "direct", revenue_usd: 0.004, transaction: TX, payer: PAYER, amount_usdc_atomic: "4000", block_number: 42 });
+  assert.deepEqual(receipt, { channel: "direct", product: "momentum", event_code: "E055", endpoint: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/momentum", revenue_usd: 0.004, transaction: TX, payer: PAYER, amount_usdc_atomic: "4000", block_number: 42 });
   assert.equal(classifyMomentumTransfer(paidLog(4_001n), paidTransaction, WALLET), null);
   assert.equal(classifyMomentumTransfer(paidLog(), { ...paidTransaction, input: "0xa9059cbb" }, WALLET), null);
   assert.equal(classifyMomentumTransfer({ ...paidLog(), topics: [paidLog().topics[0], paidLog().topics[1], `0x${PAYER.slice(2).padStart(64, "0")}`] }, paidTransaction, WALLET), null);
+});
+
+test("classifies only the exact two-millitoken resolver settlement as distinct E056 revenue", () => {
+  const receipt = classifyResolverTransfer(paidLog(RESOLVER_PRICE_ATOMIC), paidTransaction, WALLET);
+  assert.deepEqual(receipt, { channel: "direct", product: "resolver", event_code: "E056", endpoint: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/resolve", revenue_usd: 0.002, transaction: TX, payer: PAYER, amount_usdc_atomic: "2000", block_number: 42 });
+  assert.equal(classifyResolverTransfer(paidLog(MOMENTUM_PRICE_ATOMIC), paidTransaction, WALLET), null);
+  assert.equal(classifyMomentumTransfer(paidLog(RESOLVER_PRICE_ATOMIC), paidTransaction, WALLET), null);
 });
 
 test("requires an exact confirmed delivered Payan relay receipt before labeling a matching transfer as relay revenue", () => {
@@ -39,9 +48,15 @@ test("requires an exact confirmed delivered Payan relay receipt before labeling 
   assert.equal(qualifyingPayanRelayReceipt({ ...relayReceipt, offerId: "other" }, { offerId: OFFER, sellerId: AGENT }), false);
   assert.equal(qualifyingPayanRelayReceipt({ ...relayReceipt, delivered: false }, { offerId: OFFER, sellerId: AGENT }), false);
   assert.equal(classifyMomentumTransfer(paidLog(), paidTransaction, WALLET, { verifiedPayanTransactions: new Set([TX]) }).channel, "payanagent");
+  const resolverRelay = { ...relayReceipt, offerId: "offer-resolver", amountMicroUsd: 2_000, externalUrl: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/resolve" };
+  assert.equal(qualifyingPayanRelayReceipt(resolverRelay, { offerId: "offer-resolver", sellerId: AGENT, endpoint: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/resolve", amountAtomic: RESOLVER_PRICE_ATOMIC }), true);
+  assert.equal(qualifyingPayanRelayReceipt({ ...resolverRelay, externalUrl: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/momentum" }, { offerId: "offer-resolver", sellerId: AGENT, endpoint: "https://argonaut-base-token-momentum-pulse.vercel.app/api/v1/resolve", amountAtomic: RESOLVER_PRICE_ATOMIC }), false);
+  assert.equal(classifyResolverTransfer(paidLog(RESOLVER_PRICE_ATOMIC), paidTransaction, WALLET, { verifiedPayanTransactions: new Set([TX]) }).channel, "payanagent");
 });
 
 test("formats only realized exact revenue without rounding", () => {
   const row = revenueLedgerRow(classifyMomentumTransfer(paidLog(), paidTransaction, WALLET), new Date("2026-08-04T22:30:00.000Z"));
   assert.equal(row, `2026-08-05,E055,api_revenue,0.00,0.004,0.004,Settled external x402 Base Token Momentum Pulse via direct; Base transaction ${TX}; payer ${PAYER}`);
+  const resolverRow = revenueLedgerRow(classifyResolverTransfer(paidLog(RESOLVER_PRICE_ATOMIC), paidTransaction, WALLET), new Date("2026-08-04T22:30:00.000Z"));
+  assert.equal(resolverRow, `2026-08-05,E056,api_revenue,0.00,0.002,0.002,Settled external x402 Base Validated Token Resolver via direct; Base transaction ${TX}; payer ${PAYER}`);
 });
